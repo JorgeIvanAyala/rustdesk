@@ -1,4 +1,4 @@
-name: Build RustDesk (Windows ONLY)
+name: Build RustDesk (Windows Custom Server)
 
 on:
   workflow_dispatch:
@@ -70,6 +70,43 @@ jobs:
         with:
           name: bridge-artifact
           path: ./
+
+      # --- NUEVO PASO: INYECCIÓN DE SECRETOS ---
+      - name: Inject Custom Server Settings
+        shell: bash
+        env:
+          CUSTOM_SERVER: ${{ secrets.RENDEZVOUS_SERVER }}
+          CUSTOM_KEY: ${{ secrets.RS_PUB_KEY }}
+        run: |
+          echo "Iniciando inyección de configuración personalizada..."
+          
+          # 1. Reemplazar el servidor Rendezvous/Signal
+          # RustDesk suele tener la configuración por defecto en libs/hbb_common/src/config.rs
+          # Buscamos 'rs.rustdesk.com' y lo cambiamos por tu servidor.
+          if [ -n "$CUSTOM_SERVER" ]; then
+            echo "Inyectando servidor: $CUSTOM_SERVER"
+            # Usamos find y sed para reemplazar en config.rs y common.rs por si acaso
+            grep -rl "rs.rustdesk.com" libs/hbb_common/src/config.rs | xargs sed -i "s|rs.rustdesk.com|$CUSTOM_SERVER|g"
+            # También intentamos en src/common.rs si existe referencia allí
+            if [ -f "src/common.rs" ]; then
+               grep -rl "rs.rustdesk.com" src/common.rs | xargs sed -i "s|rs.rustdesk.com|$CUSTOM_SERVER|g"
+            fi
+          else
+            echo "ADVERTENCIA: No se encontró el secreto RENDEZVOUS_SERVER"
+          fi
+
+          # 2. Reemplazar la Public Key (RS_PUB_KEY)
+          # Buscamos la constante RS_PUB_KEY y reemplazamos toda la línea.
+          if [ -n "$CUSTOM_KEY" ]; then
+            echo "Inyectando Public Key..."
+            # Reemplazamos la línea que define la constante en config.rs
+            sed -i "s|pub const RS_PUB_KEY:.*|pub const RS_PUB_KEY: \&'static str = \"$CUSTOM_KEY\";|g" libs/hbb_common/src/config.rs
+          else
+             echo "ADVERTENCIA: No se encontró el secreto RS_PUB_KEY"
+          fi
+          
+          echo "Inyección finalizada."
+      # ----------------------------------------
 
       - name: Install LLVM and Clang
         uses: KyleMayes/install-llvm-action@v1
